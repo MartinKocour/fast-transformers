@@ -14,6 +14,7 @@ attention layer.
 """
 
 from torch.nn import Linear, Module
+from torch.profiler import record_function
 
 from ..events import EventDispatcher, QKVEvent
 
@@ -94,22 +95,24 @@ class AttentionLayer(Module):
         H = self.n_heads
 
         # Project the queries/keys/values
-        queries = self.query_projection(queries).view(N, L, H, -1)
-        keys = self.key_projection(keys).view(N, S, H, -1)
-        values = self.value_projection(values).view(N, S, H, -1)
+        with record_function("QKV Projection"):
+            queries = self.query_projection(queries).view(N, L, H, -1)
+            keys = self.key_projection(keys).view(N, S, H, -1)
+            values = self.value_projection(values).view(N, S, H, -1)
 
         # Let the world know of the qkv
         self.event_dispatcher.dispatch(QKVEvent(self, queries, keys, values))
 
         # Compute the attention
-        new_values = self.inner_attention(
-            queries,
-            keys,
-            values,
-            attn_mask,
-            query_lengths,
-            key_lengths
-        ).view(N, L, -1)
+        with record_function("Attention Layer"):
+            new_values = self.inner_attention(
+                queries,
+                keys,
+                values,
+                attn_mask,
+                query_lengths,
+                key_lengths
+            ).view(N, L, -1)
 
         # Project the output and return
         return self.out_projection(new_values)
